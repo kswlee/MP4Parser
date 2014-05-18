@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+	<title>MP4Parser</title>    
+
+	<script type="text/javascript" src="../bufferReader.js"></script>
+	<script type="text/javascript" src="../box.js"></script>
+	<script type="text/javascript" src="../mp4.js"></script>	
+
+	<style>
+		.property {
+			border: solid 1px #333333;
+			background-color: #fefef2;
+			display:inline-block;
+			font-size: 16px;
+			min-width: 300px;
+			font-family: helvetica, arial;
+			display: none;
+			margin-bottom:30px;
+		}
+
+		.property .header {
+			border-bottom: solid 1px #333333;
+			font-weight: bold;
+			padding: 2px;
+		}
+
+		.property .item {
+			border-bottom: solid 1px #333333;
+			padding-left: 30px;
+		}
+	</style>
+</head>
+<body>
+	<div>
+		<p>Choose a MP4 file:</p>
+
+		<input id="file_selector" type="file" value=""/>
+
+		<br />
+
+		<div class="property">
+		</div>
+	</div>
+
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+	<script>
+		$(document.body).ready(function() {
+			$('#file_selector').bind('change', function() {
+				var file = $('#file_selector')[0].files[0];
+				var fileReader = new FileReader();
+				fileReader.onload = function(c) {					
+					var bufferview = new Uint8Array(fileReader.result);
+					var mp4 = new MP4(bufferview);
+					mp4.parse();
+
+					var duration = mp4.getDuration();
+					var trackCount = mp4.getTrackCount();
+
+					var propertyRoot = $(".property");
+					var header = $('<div class="header">General</div>');
+					propertyRoot.append(header);
+
+					var item = $('<div class="item">Duration: ' + duration + 'ms </div>');
+					propertyRoot.append(item);
+					item = $('<div class="item">Track number: ' + trackCount + ' </div>');
+					propertyRoot.append(item);
+
+					for (var i = 0; i < trackCount; ++i) {
+						var trakType = mp4.getTrackType(i);
+						header = $('<div class="header">Track#' + i +  '(' + trakType + ') </div>');
+						propertyRoot.append(header);
+
+						if (trakType == 'Video') {
+							var res = mp4.getResolution();
+							item = $('<div class="item">Width: ' + res[0] + ' </div>');
+							propertyRoot.append(item);
+
+							item = $('<div class="item">Height: ' + res[1] + ' </div>');
+							propertyRoot.append(item);
+						} else {
+							var volume = mp4.getVolume();
+							item = $('<div class="item">Volume: ' + volume + ' </div>');
+							propertyRoot.append(item);
+						}
+					}
+
+					$(".property .item").last().css('border-bottom', 'solid 0px black');
+					propertyRoot.css('display', 'inline-block');
+				};
+
+				fileReader.readAsArrayBuffer(file);
+			});
+		});
+	</script>
+</body>
+</html>
