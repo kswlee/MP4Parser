@@ -1,7 +1,8 @@
 MP4Parser
 ====
 
-**mp4.js** is a simple JavaScript MP4 parser for reading MP4 boxes. Currently, mvhd and tkhd are the one completely parsed.
+**mp4.js** is a simple JavaScript MP4 parser for reading MP4 boxes. Currently, mvhd and tkhd are the one completely parsed.  
+Check the online example: http://mp4parser.kennylee.co/example/
    
 Example
 ====
