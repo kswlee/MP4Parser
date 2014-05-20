@@ -16,11 +16,39 @@ function MP4(blob /* Uint8Buffer */) {
 	this.data = blob;
 	this.rootBox = new Box();
 	this.rootBox.type = 'isom';
+	this.rootJSON = {'labe':'root'};
 }
 
 MP4.prototype.parse = function() {
 	var bufferView = new BufferView(this.data, 0, this.data.length);
 	Box.parse(bufferView, this.rootBox);
+};
+
+MP4.prototype.getJSON = function(box, parent) {	
+	if (!box || !box.boxes) {
+		return;
+	}
+
+	var obj = {};
+	obj.label = 'Box - ' + box.type;
+	parent.children = parent.children || [];
+	parent.children.push(obj);
+
+	for (var prop in box) {
+		if ((typeof prop) === "function" || prop === 'boxes' || prop === 'constructor')  {
+			continue;
+		}
+
+		obj.children = obj.children || [];
+		var property = {'label': prop + ':' + box[prop]};
+		obj.children.push(property);
+	}
+	
+	for (var i = 0; i < box.boxes.length; ++i) {
+		this.getJSON(box.boxes[i], obj);
+	}	
+
+	return this.rootJSON;
 };
 
 MP4.prototype.getDuration = function() {
@@ -67,7 +95,7 @@ MP4.prototype.getResolution = function() {
 	for (var i = 0; i < moov.boxes.length; ++i) {
 		if (moov.boxes[i].type === 'trak') {
 			tkhd = _getBox(moov.boxes[i], 'tkhd');
-			if (tkhd.volume == 0) {
+			if (tkhd.volume === 0) {
 				break;
 			}
 		}
@@ -105,20 +133,20 @@ function _getBox(box, type) {
 		}
 	}
 
-	for (var i = 0; i < queueBox.length; ++i) {
+	for (i = 0; i < queueBox.length; ++i) {
 		return _getBox(queueBox[i], type);
 	}
-};
+}
 
 function _getMovieHeaderBox(box) {
 	var mvhd = _getBox(box, 'mvhd');
 	return mvhd;
-};
+}
 
 function _getMovieBox(box) {
 	var moov = _getBox(box, 'moov');
 	return moov;
-};
+}
 
 // Export 
 window.MP4 = MP4;

@@ -3,11 +3,12 @@
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=UTF-8" />
 	<title>MP4Parser</title>    
-
+	
 	<script type="text/javascript" src="../bufferReader.js"></script>
 	<script type="text/javascript" src="../box.js"></script>
 	<script type="text/javascript" src="../mp4.js"></script>	
 
+	<link rel="stylesheet" href="jqTree/jqtree.css">
 	<style>
 		.property {
 			border: solid 1px #333333;
@@ -17,7 +18,7 @@
 			min-width: 300px;
 			font-family: helvetica, arial;
 			display: none;
-			margin-bottom:30px;
+			margin-bottom:5px;
 		}
 
 		.property .header {
@@ -42,15 +43,22 @@
 
 		<input id="file_selector" type="file" value=""/>
 
-		<br />
+		<br /> 
 
 		<div class="property">
+		</div>
+
+		<div class="box_structure">
+		<p style="font-weight:bold;">Boxes:</p>
+		<div id="mp4"></div>
 		</div>
 	</div>
 
 	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+	<script type="text/javascript" src="jqTree/tree.jquery.js"></script>	
 	<script>
 		$(document.body).ready(function() {
+			 $(".box_structure").hide();
 			$('#file_selector').bind('change', function() {
 				var file = $('#file_selector')[0].files[0];
 				var fileReader = new FileReader();
@@ -58,6 +66,13 @@
 					var bufferview = new Uint8Array(fileReader.result);
 					var mp4 = new MP4(bufferview);
 					mp4.parse();
+
+					var json = mp4.getJSON(mp4.rootBox, mp4.rootJSON);
+					$('#mp4').tree({
+						data: json.children,
+						autoOpen: true
+				    });
+				    $(".box_structure").show();		
 
 					var duration = mp4.getDuration();
 					var trackCount = mp4.getTrackCount();
