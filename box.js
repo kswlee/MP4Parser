@@ -66,6 +66,9 @@ Box.parse = function(bufferView, box) {
 	do {
 		var size = bufferView.readUint32();
 		var type = bufferView.readBoxTypeString();
+		if (size == 0 || !type) {
+			break;
+		}
 
 		var b = Box.createBox(new BufferView(bufferView.buffer, bufferView.getPos() - 2 * 4, size), size, type);
 		boxes.push(b);
