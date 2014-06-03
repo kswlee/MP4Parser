@@ -28,7 +28,7 @@ aligned(8) class Box (unsigned int(32) boxtype,
 	}
 }
 */
-function Box(bufferView) {
+function Box(bufferView, parent) {
 	if (bufferView === undefined || bufferView === null) {
 		this.size = 0;
 		this.type = '';
@@ -36,11 +36,14 @@ function Box(bufferView) {
 		return;
 	}
 
+	if (parent) {
+		this._parent = parent;
+	}
+
 	this.size = bufferView.readUint32();
 	this.type = bufferView.readBoxTypeString();
 
-	this.boxes = [];
-
+	this.boxes = [];	
 	if (this.type == 'moov' || 
 		this.type == 'trak' || 
 		this.type == 'mdia' || 
@@ -53,6 +56,34 @@ function Box(bufferView) {
 		Box.parse(subBufferView, this);
 	}
 }
+
+Box.prototype.getHandlerType = function() {
+	var p = this._parent;
+	do {
+		if (!p) 
+			break;
+
+		if (p.handlerType) {
+			return p.handlerType;
+		}
+
+		if (p.type === 'mdia') {
+			var mdia = p;
+			for (var i = 0; i < mdia.boxes.length; ++i) {
+				p = mdia.boxes[i];
+				if (p.handlerType) {
+					return p.handlerType;			
+				}
+			} 
+
+			break;
+		}
+
+		p = p._parent;
+	} while(true);
+
+	return '';
+};
 
 Box.getBoxType = function(bufferView) {
 	bufferView.skip(4); // skip the box size
@@ -70,9 +101,11 @@ Box.parse = function(bufferView, box) {
 			break;
 		}
 
-		var b = Box.createBox(new BufferView(bufferView.buffer, bufferView.getPos() - 2 * 4, size), size, type);
+		var handlerType = box.getHandlerType();
+		var b = Box.createBox(new BufferView(bufferView.buffer, bufferView.getPos() - 2 * 4, size), size, type, box, handlerType);
 		boxes.push(b);
 
+		b._parent = box;
 		box.boxes.push(b);
 
 		bufferView.skip(size - 2 * 4);
@@ -85,9 +118,9 @@ Box.parse = function(bufferView, box) {
 	return boxes;
 };
 
-Box.createBox = function(bufferView, size, type, box) {
+Box.createBox = function(bufferView, size, type, box, handlerType) {
 	var b;
-	var baseBox = new Box(bufferView);
+	var baseBox = new Box(bufferView, box);	
 	var fullBox;
 	if (type === 'mvhd') {		
 		fullBox = new FullBox(bufferView, baseBox);
@@ -125,6 +158,30 @@ Box.createBox = function(bufferView, size, type, box) {
 		fullBox = new FullBox(bufferView, baseBox);
 		var urn = new DataEntryUrnBox(bufferView, fullBox);
 		b = urn;
+	} else if (type === 'stsd') {
+		fullBox = new FullBox(bufferView, baseBox);
+		var urn = new SampleDescriptionBox(bufferView, fullBox, handlerType);
+		b = urn;	
+	} else if (type === 'stts') {
+		fullBox = new FullBox(bufferView, baseBox);
+		var stts = new TimeToSampleBox(bufferView, fullBox);
+		b = stts;
+	} else if (type === 'stss') {
+		fullBox = new FullBox(bufferView, baseBox);
+		var stss = new SyncSampleBox(bufferView, fullBox);
+		b = stss;
+	} else if (type === 'stsc') {
+		fullBox = new FullBox(bufferView, baseBox);
+		var stsc = new SampleToChunkBox(bufferView, fullBox);
+		b = stsc;
+	} else if (type === 'stsz') {
+		fullBox = new FullBox(bufferView, baseBox);
+		var stsz = new SampleSizeBox(bufferView, fullBox);
+		b = stsz;
+	} else if (type === 'stco') {
+		fullBox = new FullBox(bufferView, baseBox);
+		var stco = new ChunkOffsetBox(bufferView, fullBox);
+		b = stco;
 	} else {
 		b = baseBox;
 	}
@@ -143,6 +200,10 @@ function FullBox(bufferView, box) {
 	if (box) {
 		this.size = box.size;
 		this.type = box.type;
+
+		if (box._parent) {
+			this._parent = box._parent;
+		}
 	}
 
 	if (bufferView) {
@@ -160,6 +221,10 @@ FullBox.overrideProp = function(fullBox) {
 		this.type = fullBox.type;
 		this.version = fullBox.version;
 		this.flags = fullBox.flags;
+
+		if (fullBox._parent) {
+			this._parent = fullBox._parent;
+		}
 	} 
 };
 
@@ -175,6 +240,228 @@ FullBox.extend = function(child) {
 FullBox.prototype = new Box();
 FullBox.prototype.constructor = FullBox;
 
+/*
+aligned(8) abstract class SampleEntry (unsigned int(32) format) extends Box(format){
+const unsigned int(8)[6] reserved = 0;
+unsigned int(16) data_reference_index;
+}
+*/
+function SampleEntry(bufferView, box) {
+	if (box) {
+		this.size = box.size;
+		this.type = box.type;
+	}
+
+	this.reserved = [];
+	this.data_reference_index = 0;
+	if (bufferView) {
+		for (var i = 0; i < 6; ++i) {
+			this.reserved[i] = bufferView.readUint8();
+		}
+
+		this.data_reference_index = bufferView.readUint16();
+	}
+}
+SampleEntry.prototype = new Box();
+SampleEntry.prototype.constructor = SampleEntry;
+
+/*
+class VisualSampleEntry(codingname) extends SampleEntry (codingname){ unsigned int(16) pre_defined = 0;
+const unsigned int(16) reserved = 0;
+unsigned int(32)[3] pre_defined = 0;
+unsigned int(16) width;
+unsigned int(16) height;
+template unsigned int(32) horizresolution = 0x00480000; // 72 dpi template unsigned int(32) vertresolution = 0x00480000; // 72 dpi const unsigned int(32) reserved = 0;
+template unsigned int(16) frame_count = 1;
+string[32] compressorname;
+template unsigned int(16) depth = 0x0018;
+int(16) pre_defined = -1;
+// other boxes from derived specifications
+CleanApertureBox clap; // optional
+PixelAspectRatioBox pasp; // optional
+}
+*/
+function VisualSampleEntry(bufferView, sampleEntry) {
+	if (sampleEntry) {
+		this.size = sampleEntry.size;
+		this.type = sampleEntry.type;
+		this.reserved = sampleEntry.reserved;
+		this.data_reference_index = sampleEntry.data_reference_index;
+	}	
+
+	if (bufferView) {
+		this.pre_defined = bufferView.readUint16();
+		this.reservedEx = bufferView.readUint16();
+
+		bufferView.readUint32();	// skip 3 pre-defined of 32bit data
+		bufferView.readUint32();		
+		bufferView.readUint32();		
+
+		this.width = bufferView.readUint16();
+		this.height = bufferView.readUint16();
+
+		this.horizresolution = bufferView.readUint32();
+		this.vertresolution = bufferView.readUint32();
+
+		bufferView.readUint32(); // skip reserved
+
+		this.frameCount = bufferView.readUint16();
+		this.compressorName = bufferView.readBoxTypeString();
+		this.depth = bufferView.readUint16();
+
+		bufferView.readUint16(); // skip predefined
+	}
+} 
+VisualSampleEntry.prototype = new SampleEntry();
+VisualSampleEntry.prototype.constructor = VisualSampleEntry;
+
+/*
+class AudioSampleEntry(codingname) extends SampleEntry (codingname){ const unsigned int(32)[2] reserved = 0;
+template unsigned int(16) channelcount = 2;
+template unsigned int(16) samplesize = 16;
+unsigned int(16) pre_defined = 0;
+const unsigned int(16) reserved = 0 ;
+template unsigned int(32) samplerate = { default samplerate of media}<<16;
+}
+*/
+function AudioSampleEntry(bufferView, sampleEntry) {
+	if (sampleEntry) {
+		this.size = sampleEntry.size;
+		this.type = sampleEntry.type;
+		this.reserved = sampleEntry.reserved;
+		this.data_reference_index = sampleEntry.data_reference_index;
+	}	
+
+	if (bufferView) {
+		bufferView.readUint32();  // skip two reserved
+		bufferView.readUint32(); 
+
+		this.channelCount = bufferView.readUint16();
+		this.sampleSize = bufferView.readUint16();
+
+		this.preDefined = bufferView.readUint16();
+		this.reserved = bufferView.readUint16();
+		this.sampleRate = bufferView.readUint32();
+	}
+}
+AudioSampleEntry.prototype = new SampleEntry();
+AudioSampleEntry.prototype.constructor = AudioSampleEntry;
+
+function TimeToSampleBox(bufferView, fullBox) {
+	FullBox.overrideProp.apply(this, [fullBox]);
+
+	this.entryCount = bufferView.readUint32();
+
+	this.samples = [];
+	for (var i = 0; i < this.entryCount; ++i) {
+		var entry = {
+			'count': bufferView.readUint32(),
+			'delta': bufferView.readUint32()
+		};
+
+		this.samples.push(entry);
+	}
+
+} FullBox.extend(TimeToSampleBox);
+
+/*
+aligned(8) class TimeToSampleBox
+   extends FullBox(’stts’, version = 0, 0) {
+   unsigned int(32)  entry_count;
+      int i;
+   for (i=0; i < entry_count; i++) {
+      unsigned int(32)  sample_count;
+      unsigned int(32)  sample_delta;
+   }
+}
+*/
+function SyncSampleBox(bufferView, fullBox) {
+	FullBox.overrideProp.apply(this, [fullBox]);
+
+	this.entryCount = bufferView.readUint32();
+
+	this.syncSamples = [];
+	for (var i = 0; i < this.entryCount; ++i) {
+		this.syncSamples.push(bufferView.readUint32());
+	}
+
+} FullBox.extend(SyncSampleBox);
+
+/*
+aligned(8) class SampleToChunkBox 
+ extends FullBox(‘stsc’, version = 0, 0) { 
+ unsigned int(32) entry_count; 
+ for (i=1; i <= entry_count; i++) { 
+ unsigned int(32) first_chunk; 
+ unsigned int(32) samples_per_chunk; 
+ unsigned int(32) sample_description_index; 
+ } 
+} 
+*/
+function SampleToChunkBox(bufferView, fullBox) {
+	FullBox.overrideProp.apply(this, [fullBox]);
+
+	this.entryCount = bufferView.readUint32();
+
+	this.samples = [];
+	for (var i = 0; i < this.entryCount; ++i) {
+		var entry = {
+			'first_chunk': bufferView.readUint32(),
+			'samples_per_chunk': bufferView.readUint32(),
+			'sample_description_index': bufferView.readUint32()
+		};
+
+		this.samples.push(entry);
+	}
+
+} FullBox.extend(SampleToChunkBox);
+
+/*
+aligned(8) class SampleSizeBox extends FullBox(‘stsz’, version = 0, 0) { 
+ unsigned int(32) sample_size; 
+ unsigned int(32) sample_count; 
+ if (sample_size==0) { 
+ for (i=1; i <= sample_count; i++) { 
+ unsigned int(32) entry_size; 
+ } 
+ } 
+} 
+*/
+function SampleSizeBox(bufferView, fullBox) {
+	FullBox.overrideProp.apply(this, [fullBox]);
+	this.sampleSize = bufferView.readUint32();
+	this.sampleCount = bufferView.readUint32();
+
+	if (this.sampleSize == 0) {
+		this.sampleSizes = [];
+		for (var i = 0; i < this.sampleCount; ++i) {
+			this.sampleSizes.push(bufferView.readUint32());
+		}
+	}
+
+} FullBox.extend(SampleSizeBox);
+
+/*
+aligned(8) class ChunkOffsetBox
+   extends FullBox(‘stco’, version = 0, 0) {
+   unsigned int(32)  entry_count;
+   for (i=1; i <= entry_count; i++) {
+      unsigned int(32)  chunk_offset;
+   }
+}
+*/
+function ChunkOffsetBox(bufferView, fullBox) {
+	FullBox.overrideProp.apply(this, [fullBox]);
+
+	this.entryCount = bufferView.readUint32();
+
+	this.chunkOffset = [];
+	for (var i = 0; i < this.entryCount; ++i) {
+		this.chunkOffset.push(bufferView.readUint32());
+	}
+
+} FullBox.extend(ChunkOffsetBox);
+ 
 /*
 aligned(8) class MovieHeaderBox extends FullBox(‘mvhd’, version, 0) {
 	if (version==1) {
@@ -349,6 +636,19 @@ function HandlerReferenceBox(bufferView, fullBox) {
 
 	this.pre_defined = bufferView.readUint32();
 	this.handlerType = bufferView.readUint32();
+	this.hadler_type = [];
+
+	this.hadler_type[0] = (this.handlerType & 0xFF000000) >> 24; 
+	this.hadler_type[1] = (this.handlerType & 0x00FF0000) >> 16; 
+	this.hadler_type[2] = (this.handlerType & 0x0000FF00) >> 8; 
+	this.hadler_type[3] = (this.handlerType & 0x000000FF); 
+
+	this.handlerType = "";
+	for (var i = 0; i < this.hadler_type.length; ++i) {
+		this.hadler_type[i] = String.fromCharCode(this.hadler_type[i]);
+		this.handlerType += this.hadler_type[i];
+	}
+	delete this.hadler_type;
 
 	this.reserved = [];
 	for (var i = 0; i < 3; ++i) {
@@ -407,6 +707,7 @@ function DataReferenceBox(bufferView, fullBox) {
 		var bufView = new BufferView(bufferView.buffer, bufferView.getPos() + accumLength, curBoxSize);
 		var type = bufView.peekBoxTypeString(accumLength);
 		var box = Box.createBox(bufView, curBoxSize, type);
+		box._parent = this;
 		this.boxes.push(box);
 
 		accumLength += curBoxSize;
@@ -436,6 +737,53 @@ function DataEntryUrnBox(bufferView, fullBox) {
 	// this.name
 	this.location = bufferView.readRemainingAsString();
 } FullBox.extend(DataEntryUrnBox);
+
+/*
+aligned(8) class SampleDescriptionBox (unsigned int(32) handler_type)
+	extends FullBox('stsd', 0, 0){
+		int i ;
+		unsigned int(32) entry_count;
+		for (i = 1 ; i u entry_count ; i++){
+			switch (handler_type){
+				case ‘soun’: // for audio tracks
+					AudioSampleEntry();
+				break;
+				case ‘vide’: // for video tracks
+					VisualSampleEntry();
+				break;
+				case ‘hint’: // Hint track
+					HintSampleEntry();
+				break;
+		}
+	}
+}
+*/
+function SampleDescriptionBox(bufferView, fullBox, handler_type) {
+	FullBox.overrideProp.apply(this, [fullBox]);
+
+	this.entryCount = bufferView.readUint32();
+
+	var accumLength = 0;
+	this.boxes = [];
+	for (var i = 0; i < this.entryCount; ++i) {
+		var curBoxSize = bufferView.peekUint32(accumLength);		
+		var bufView = new BufferView(bufferView.buffer, bufferView.getPos() + accumLength, curBoxSize);
+		var type = bufView.peekBoxTypeString(accumLength);
+		var box = Box.createBox(bufView, curBoxSize, type);		
+		var sampleEntry = new SampleEntry(bufView, box);
+
+		var vsEntry;
+		if (handler_type === 'vide') {
+			vsEntry = new VisualSampleEntry(bufView, sampleEntry);
+		} else if (handler_type === 'soun') {
+			vsEntry = new AudioSampleEntry(bufView, sampleEntry);
+		}
+		vsEntry._parent = this;
+		this.boxes.push(vsEntry);
+
+		accumLength += curBoxSize;
+	}	
+} FullBox.extend(SampleDescriptionBox);
 
 // Export
 window.Box = Box;

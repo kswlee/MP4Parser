@@ -35,12 +35,25 @@ MP4.prototype.getJSON = function(box, parent) {
 	parent.children.push(obj);
 
 	for (var prop in box) {
-		if ((typeof prop) === "function" || prop === 'boxes' || prop === 'constructor')  {
+		if ((typeof box[prop]) === "function" || prop === 'boxes' || prop === 'constructor' || prop === '_parent')  {
 			continue;
 		}
 
 		obj.children = obj.children || [];
 		var property = {'label': prop + ':' + box[prop]};
+		if ( Object.prototype.toString.call( box[prop] ) === '[object Array]') {
+			//property = {'label': prop};
+			//property.children = [];
+
+			property.children = [];
+			for (var i = 0; i < box[prop].length && box[prop][i].count; ++i) {
+				property.children.push({'label': i + " - count: " + box[prop][i].count + " delta: " + box[prop][i].delta});
+			}
+
+			for (var i = 0; i < box[prop].length && box[prop][i].first_chunk; ++i) {
+				property.children.push({'label': i + " - first_chunk: " + box[prop][i].first_chunk + " samples_per_chunk: " + box[prop][i].samples_per_chunk + " sample_description_index: " + box[prop][i].sample_description_index});
+			}
+		}
 		obj.children.push(property);
 	}
 	
